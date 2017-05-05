@@ -8,13 +8,14 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
-
 import de.ros.fux.model.FusionBoard;
 import de.ros.fux.tools.*;
 
 public class GameRoom extends Thread {
 
 	private List<Socket> players = new ArrayList<Socket>();
+	//Checker for skipper
+	private List<Boolean> connected = new ArrayList<Boolean>();
 	private boolean started = false;
 	private boolean finished = false;
 	private Config conf;
@@ -23,7 +24,7 @@ public class GameRoom extends Thread {
 	private int playersTurn = 1;
 	private long startTime;
 	private final long TIMEOUT = 120000;
-	FusionBoard board;
+	private FusionBoard board;
 
 	public GameRoom(Config conf) {
 
@@ -40,6 +41,7 @@ public class GameRoom extends Thread {
 				ous.add(new ObjectOutputStream(player.getOutputStream()));
 
 				players.add(player);
+				connected.add(true);
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -92,8 +94,8 @@ public class GameRoom extends Thread {
 		startTime = System.currentTimeMillis();
 
 		while (true) {
-
-			if (System.currentTimeMillis() <= (startTime + TIMEOUT)) {
+			//startTime = System.currentTimeMillis();
+			if (System.currentTimeMillis() <= (startTime + TIMEOUT) && connected.get(playersTurn)) {
 
 				int[] coord = (int[]) (ins.get(0).readObject());
 				if (!coord.equals(null) || coord.length == 2) {
@@ -101,25 +103,40 @@ public class GameRoom extends Thread {
 					if (board.addToCell(coord[0], coord[1], playersTurn)) {
 
 						broadcastBoard();
-						if (playersTurn == conf.getMAX_PLAYER())
-							playersTurn = 0;
-						else
-							playersTurn++;
+						nextPlayer();
 						won = board.checkWin();
+						/**
+						 * if(won = board.checkWin() != 0){
+						 * 		break;
+						 * 		return won;
+						 * }
+						 */
 						// TODO check auf timeout
-						break;
+						break;//Optimierung startTime = System.currentTimeMillis(); in die While-Schleife, dann kann die Schleife permant genutzt werden und 
+							 //muss nur den Gewinner zurück geben. 
 
 					}
 				}
 			} else {
-				
-				board.removePlayer(playersTurn);
-				//TODO
+				//Player has left, so remove him from the thread,game and broadcast the updated board to the remaining Players.
+				if(connected.get(playersTurn)){
+					board.removePlayer(playersTurn);
+					connected.set(playersTurn, false);
+					broadcastBoard();
+				}
+				nextPlayer();
 				break;
 			}
 		}
-
+		//TODO Fix wincondition
+		//TODO Fix breakpoints
 		return won;
+	}
+	public void nextPlayer(){
+		if (playersTurn == conf.getMAX_PLAYER())
+			playersTurn = 0;
+		else
+			playersTurn++;
 	}
 
 	private void stopThread() {
